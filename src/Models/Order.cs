@@ -4,6 +4,7 @@ public class Order
 {
 
 	public string id { get; set; }
+	public string userId { get; set; }
 	public int orderNumber { get; set; }
 	public string submittedDate { get; set; }
 	public string version { get; set; }

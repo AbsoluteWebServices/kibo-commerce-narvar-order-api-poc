@@ -13,8 +13,7 @@ public class WebhookService
 		var jsonData = await _kiboService.DeserializeWebhookData(request.Body);
 		if (!IsValidJson(jsonData))
 			return Results.BadRequest("JSON deserialization resulted in null.");
-
-		if (jsonData!.body.topic.StartsWith("order"))
+		if (jsonData!.topic.StartsWith("order"))
 			return await ProcessOrder(jsonData);
 
 		return Results.BadRequest("No route found for this webhook topic.");
@@ -23,14 +22,14 @@ public class WebhookService
 
 	private bool IsValidJson(KiboWebhookData? jsonData)
 	{
-		return jsonData?.body != null;
+		return jsonData?.topic != null;
 	}
 
 	private async Task<IResult> ProcessOrder(KiboWebhookData jsonData)
 	{
 		try
 		{
-			var response = await _kiboService.GetOrderAsync(jsonData.body.entityId);
+			var response = await _kiboService.GetOrderAsync(jsonData.entityId);
 			var transformedResponse = KiboService.TransformResponse(response);
 			var narvarResponse = await _narvarService.PostOrderAsync(transformedResponse);
 			return Results.Json(narvarResponse);

@@ -136,7 +136,7 @@ public class KiboService
 					    zip = response.billingInfo.billingContact.address.postalOrZipCode,
 					    country = response.billingInfo.billingContact.address.countryCode
 				    },
-				    customer_id = response.billingInfo.billingContact.id
+				    customer_id = response.userId
 				},
 			}
 		};
