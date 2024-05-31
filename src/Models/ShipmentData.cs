@@ -1,10 +1,7 @@
-﻿// ShipmentData myDeserializedClass = JsonConvert.DeserializeObject<ShipmentData>(myJsonResponse);
-
-using KiboWebhookListener.src.Models;
-
+﻿
 public class ShipmentData
 {
-    public Embedded _embedded { get; set; }
+    public Embedded? _embedded { get; set; }
     public Links _links { get; set; }
     public Page page { get; set; }
 }
@@ -235,7 +232,7 @@ public class Package
     public string packageId { get; set; }
     public string packagingType { get; set; }
     public string shippingMethodCode { get; set; }
-    public List<string> trackingNumbers { get; set; }
+    public List<string>? trackingNumbers { get; set; }
     public List<object> returnTrackingNumbers { get; set; }
     public List<Tracking> trackings { get; set; }
     public bool hasLabel { get; set; }
@@ -340,7 +337,7 @@ public class KiboShipment
     public Customer customer { get; set; }
     public string shippingMethodCode { get; set; }
     public string shippingMethodName { get; set; }
-    public List<Item> items { get; set; }
+    public List<Item>? items { get; set; }
     public List<object> canceledItems { get; set; }
     public List<object> reassignedItems { get; set; }
     public List<object> rejectedItems { get; set; }

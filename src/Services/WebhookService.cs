@@ -60,10 +60,13 @@ public class WebhookService
         {
 	        var kiboOrder = await _kiboService.GetOrderAsync(jsonData.entityId);
 			// Check if order has been sent to Narvar
-			var narvarOrder = await _narvarService.GetOrderAsync(kiboOrder.orderNumber.ToString());
+			var narvarOrder = await _narvarService.GetOrderAsync(kiboOrder.orderNumber);
 			if (narvarOrder is { status: "FAILURE" })
 			{
-				narvarOrder = await CreateNarvarOrderFromKiboWebhook(jsonData);
+				await CreateNarvarOrderFromKiboWebhook(jsonData);
+				narvarOrder = await _narvarService.GetOrderAsync(kiboOrder.orderNumber);
+				// wait for order to be created (5 seconds)
+				await Task.Delay(5000);
 			}
 
 			if (narvarOrder is null)
@@ -73,8 +76,8 @@ public class WebhookService
 			
             var kiboShipments = await _kiboService.GetOrderShipmentsAsync(jsonData.entityId);
             var newNarvarOrder = _kiboService.TransformOrderResponse(kiboOrder, kiboShipments);
-            // compare narvarOrder to newNarvarOrder
-            if (narvarOrder.order_info.shipments.Count != newNarvarOrder.order_info.shipments.Count)
+            // New orders should trigger shipment
+            if (narvarOrder.order_info == null || narvarOrder.order_info.shipments.Count != newNarvarOrder.order_info.shipments.Count)
 			{
 				var narvarShipmentResponse = await _narvarService.PostOrderAsync(newNarvarOrder);
 				return Results.Json(narvarShipmentResponse);

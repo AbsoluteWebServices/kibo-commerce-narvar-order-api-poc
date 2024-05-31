@@ -26,7 +26,7 @@ public class NarvarException : Exception
 
     private static NarvarResponse? DeserializeError(HttpResponseMessage response)
     {
-        var errorResponseBody = response.Content?.ReadAsStringAsync().Result;
+        var errorResponseBody = response.Content.ReadAsStringAsync().Result;
         return JsonSerializer.Deserialize<NarvarResponse>(errorResponseBody!);
     }
 

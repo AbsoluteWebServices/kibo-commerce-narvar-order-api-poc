@@ -1,12 +1,9 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using KiboWebhookListener.Exceptions;
-using KiboWebhookListener.Helpers;
 using KiboWebhookListener.Models;
 using KiboWebhookListener.Models.Narvar;
-using KiboWebhookListener.src.Models.Narvar;
 
 namespace KiboWebhookListener.Services;
 
@@ -15,9 +12,11 @@ public class KiboService
 	private readonly HttpClient _client = new();
 	private readonly string _clientId = Environment.GetEnvironmentVariable("KIBO_CLIENT_ID")!;
 	private readonly string _clientSecret = Environment.GetEnvironmentVariable("KIBO_CLIENT_SECRET")!;
+	private readonly string _orderPrefix = "UAT_";
+	private readonly bool _sandbox = Environment.GetEnvironmentVariable("KIBO_ENVIRONMENT") != "production";
 
 	private readonly string _sandboxPrefix =
-		Environment.GetEnvironmentVariable("KIBO_ENVIRONMENT")!.Equals("Production") ? "" : ".sandbox";
+		Environment.GetEnvironmentVariable("KIBO_ENVIRONMENT")!.Equals("production") ? "" : ".sandbox";
 
 	private readonly string _tenantId = Environment.GetEnvironmentVariable("KIBO_TENANT_ID")!;
 
@@ -45,12 +44,14 @@ public class KiboService
 				var responseBody = await response.Content.ReadAsStreamAsync();
 				KiboOrder order = await JsonSerializer.DeserializeAsync<KiboOrder>(responseBody) ??
 				                         throw new KiboException(response);
-				order.orderNumber = "TEST2_" + order.orderNumber;
+				order.orderNumber = _orderPrefix + order.orderNumber;
 				return order;
 			}
 			catch (HttpRequestException e)
 			{
 				attempts++;
+				// log
+				Console.WriteLine(e.Message);
 				await Task.Delay((int) Math.Pow(2, attempts) * 1000);
 			}
 		}
@@ -84,6 +85,7 @@ public class KiboService
             client_secret = _clientSecret,
             grant_type = "client_credentials"
         };
+        _client.DefaultRequestHeaders.Authorization = null;
         var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
         {
             Content = new StringContent(
@@ -91,20 +93,23 @@ public class KiboService
                 Encoding.UTF8,
                 "application/json")
         };
-
         var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
         var responseBody = await response.Content.ReadAsStringAsync();
         var responseObject = JsonSerializer.Deserialize<Dictionary<string, object>>(responseBody);
-
+        var token = responseObject?["access_token"].ToString();
+		if (token is null)
+		{
+			throw new Exception("Could not authenticate with Kibo");
+		}
         _client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", responseObject["access_token"].ToString());
+            new AuthenticationHeaderValue("Bearer", token);
     }
 
     public NarvarRequest TransformOrderResponse(KiboOrder response, List<KiboShipment>? kiboShipments)
 	{
-		var shipments = (kiboShipments ?? new List<KiboShipment>()).Select(shipment => new NarvarShipment()
+		var shipments = (kiboShipments ?? new List<KiboShipment>()).Select((shipment, index) => new NarvarShipment()
 		{
 			// ship_source = "Kibo",
 			items_info = shipment.items.Select(item => new ItemsInfo()
@@ -115,14 +120,17 @@ public class KiboService
 			}).ToList(),
 			ship_method = shipment.shippingMethodName,
 			// Find first tracking number that is not empty
-			carrier = shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t)).StartsWith("1Z") ? "UPS" : "USPS",
+			
+			// Sandbox will always be UPS
+			// New comment
+			carrier = shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t)).StartsWith("1Z") && !_sandbox ? "USPS" : "UPS",
 			shipped_to = new ShippedTo()
 			{
 				first_name = shipment.customer.customerContact.firstName,
 				last_name = shipment.customer.customerContact.lastNameOrSurname,
 				phone = shipment.customer.customerContact.phoneNumbers.mobile,
 				email = shipment.email,
-				address = new src.Models.Narvar.Address()
+				address = new Models.Narvar.Address()
 				{
 					street_1 = shipment.destination.destinationContact.address.address1,
 					street_2 = shipment.destination.destinationContact.address.address2,
@@ -137,7 +145,7 @@ public class KiboService
 			// ship_total = shipment.total,
 			ship_tax = shipment.shippingTaxTotal,
 			ship_date = shipment.fulfillmentDate,
-			tracking_number = shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t))
+			tracking_number = _sandbox ? response.orderNumber + "_" + index : shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t))
 		}).ToList();
 		
 		NarvarRequest transformed = new NarvarRequest()
@@ -175,7 +183,7 @@ public class KiboService
 						last_name = response.billingInfo.billingContact.lastNameOrSurname,
 						phone = response.billingInfo.billingContact.phoneNumbers.mobile,
 						email = response.billingInfo.billingContact.email,
-						address = new src.Models.Narvar.Address()
+						address = new Models.Narvar.Address()
 						{
 							street_1 = response.billingInfo.billingContact.address.address1,
 							street_2 = response.billingInfo.billingContact.address.address2,
@@ -193,7 +201,7 @@ public class KiboService
 					last_name = response.billingInfo.billingContact.lastNameOrSurname,
 					phone = response.billingInfo.billingContact.phoneNumbers.mobile,
 					email = response.billingInfo.billingContact.email,
-					address = new src.Models.Narvar.Address()
+					address = new Models.Narvar.Address()
 					{
 						street_1 = response.billingInfo.billingContact.address.address1,
 						street_2 = response.billingInfo.billingContact.address.address2,

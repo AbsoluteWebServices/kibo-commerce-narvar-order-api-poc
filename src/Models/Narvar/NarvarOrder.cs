@@ -1,6 +1,5 @@
-﻿using KiboWebhookListener.Models;
-
-namespace KiboWebhookListener.src.Models.Narvar
+﻿
+namespace KiboWebhookListener.Models.Narvar
 {
     public class NarvarOrder
     {

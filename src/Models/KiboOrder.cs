@@ -16,7 +16,7 @@ public class KiboOrder
 	public bool isPartialOrder { get; set; }
 
 	// ... other properties
-	public List<Note> notes { get; set; }
+	private List<Note> notes { get; set; }
 	public List<Item> items { get; set; }
 
 	public BillingInfo billingInfo { get; set; }
