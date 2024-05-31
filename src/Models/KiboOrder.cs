@@ -1,11 +1,15 @@
+using System.Text.Json.Serialization;
+using KiboWebhookListener.Helpers;
+
 namespace KiboWebhookListener.Models;
 
-public class Order
+public class KiboOrder
 {
 
 	public string id { get; set; }
 	public string userId { get; set; }
-	public int orderNumber { get; set; }
+	[JsonConverter(typeof(KiboOrderNumberConverter))]
+	public string orderNumber { get; set; }
 	public string submittedDate { get; set; }
 	public string version { get; set; }
 

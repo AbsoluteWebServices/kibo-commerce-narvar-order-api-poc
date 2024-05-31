@@ -1,5 +1,6 @@
 using KiboWebhookListener.Exceptions;
 using KiboWebhookListener.Models;
+using KiboWebhookListener.Models.Narvar;
 
 namespace KiboWebhookListener.Services;
 
@@ -12,32 +13,27 @@ public class WebhookService
 	{
 		var jsonData = await _kiboService.DeserializeWebhookData(request.Body);
 		if (!IsValidJson(jsonData))
+		{
 			return Results.BadRequest("JSON deserialization resulted in null.");
-		if (jsonData!.topic.StartsWith("order"))
-			return await ProcessOrder(jsonData);
-
-		return Results.BadRequest("No route found for this webhook topic.");
-
-	}
-
-	private bool IsValidJson(KiboWebhookData? jsonData)
-	{
-		return jsonData?.topic != null;
-	}
-
-	private async Task<IResult> ProcessOrder(KiboWebhookData jsonData)
-	{
+		}
 		try
 		{
-			var response = await _kiboService.GetOrderAsync(jsonData.entityId);
-			var transformedResponse = KiboService.TransformResponse(response);
-			var narvarResponse = await _narvarService.PostOrderAsync(transformedResponse);
-			return Results.Json(narvarResponse);
+			switch (jsonData!.topic)
+			{
+				case "order.opened":
+					var order = await CreateNarvarOrderFromKiboWebhook(jsonData);
+					return Results.Json(order);
+				case "order.fulfilled":
+				case "order.updated":
+					return await ProcessOrderShipped(jsonData);
+				default:
+					return Results.BadRequest("No route found for this webhook topic.");
+			}
 		}
 		catch (KiboException e)
 		{
 			LogException(e);
-			return Results.Json(e);
+			return Results.Json(e.Message);
 		}
 		catch (NarvarException e)
 		{
@@ -46,7 +42,62 @@ public class WebhookService
 		}
 	}
 
-	private void LogException(Exception e)
+    private bool IsValidJson(KiboWebhookData? jsonData)
+	{
+		return jsonData?.topic != null;
+	}
+
+	private async Task<NarvarResponse> CreateNarvarOrderFromKiboWebhook(KiboWebhookData jsonData)
+	{
+		var response = await _kiboService.GetOrderAsync(jsonData.entityId);
+		var transformedResponse = _kiboService.TransformOrderResponse(response, null);
+		return await _narvarService.PostOrderAsync(transformedResponse);
+	}
+
+    private async Task<IResult> ProcessOrderShipped(KiboWebhookData jsonData)
+    {
+        try
+        {
+	        var kiboOrder = await _kiboService.GetOrderAsync(jsonData.entityId);
+			// Check if order has been sent to Narvar
+			var narvarOrder = await _narvarService.GetOrderAsync(kiboOrder.orderNumber.ToString());
+			if (narvarOrder is { status: "FAILURE" })
+			{
+				narvarOrder = await CreateNarvarOrderFromKiboWebhook(jsonData);
+			}
+
+			if (narvarOrder is null)
+			{
+				return Results.BadRequest("Narvar order not found and could not be created.");
+			}
+			
+            var kiboShipments = await _kiboService.GetOrderShipmentsAsync(jsonData.entityId);
+            var newNarvarOrder = _kiboService.TransformOrderResponse(kiboOrder, kiboShipments);
+            // compare narvarOrder to newNarvarOrder
+            if (narvarOrder.order_info.shipments.Count != newNarvarOrder.order_info.shipments.Count)
+			{
+				var narvarShipmentResponse = await _narvarService.PostOrderAsync(newNarvarOrder);
+				return Results.Json(narvarShipmentResponse);
+			}
+			else
+			{
+				// No new shipments
+				return Results.Json(null);
+			}
+        }
+        catch (KiboException e)
+        {
+            LogException(e);
+            return Results.Json(e);
+        }
+        catch (NarvarException e)
+        {
+            LogException(e);
+            return Results.Json(e.JsonParameter);
+        }
+    }
+
+private void LogException(Exception e)
 	{
 		Console.WriteLine($"\nException Caught! Message :{e.Message}");
 	}

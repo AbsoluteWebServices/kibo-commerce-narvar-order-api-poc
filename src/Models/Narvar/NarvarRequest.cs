@@ -2,10 +2,7 @@ using KiboWebhookListener.src.Models.Narvar;
 
 namespace KiboWebhookListener.Models.Narvar;
 
-public class NarvarResponse
+public class NarvarRequest
 {
-	public string status { get; set; }
-	
 	public OrderInfo order_info { get; set; }
-	public NarvarMessage[] messages { get; set; }
 }

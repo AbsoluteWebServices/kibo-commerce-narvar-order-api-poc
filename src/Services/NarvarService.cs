@@ -23,17 +23,42 @@ public class NarvarService
 				Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_username}:{_password}")));
 	}
 
-	public async Task<NarvarResponse?> PostOrderAsync(string payload)
+	public async Task<NarvarResponse?> GetOrderAsync(string orderId)
 	{
+		var response = await _client.GetAsync($"{BaseEndpoint}/orders/{orderId}");
+
+		if (!response.IsSuccessStatusCode)
+			throw new NarvarException(response);
+
+		var responseBody = await response.Content.ReadAsStringAsync();
+		return JsonSerializer.Deserialize<NarvarResponse>(responseBody);
+	}
+
+	public async Task<NarvarResponse> PostOrderAsync(NarvarRequest payload)
+	{
+		var json = JsonSerializer.Serialize(payload);
 		var response = await _client.PostAsync($"{BaseEndpoint}/orders",
-			new StringContent(payload, Encoding.UTF8, "application/json"));
+			new StringContent(json, Encoding.UTF8, "application/json"));
 
 		if (!response.IsSuccessStatusCode)
 			// Read json response body
 			throw new NarvarException(response);
 
 		var responseBody = await response.Content.ReadAsStreamAsync();
-		// TODO: Return Narvar Order
-		return await JsonSerializer.DeserializeAsync<NarvarResponse>(responseBody);
+		return await JsonSerializer.DeserializeAsync<NarvarResponse>(responseBody) ?? throw new InvalidOperationException();
 	}
+
+    // public async Task<NarvarResponse?> PostOrderAsync(string payload, string order_number)
+    // {
+    //     var response = await _client.PutAsync($"{BaseEndpoint}/orders/{order_number}/shipments",
+    //         new StringContent(payload, Encoding.UTF8, "application/json"));
+    //
+    //     if (!response.IsSuccessStatusCode)
+    //         // Read json response body
+    //         throw new NarvarException(response);
+    //
+    //     var responseBody = await response.Content.ReadAsStreamAsync();
+    //     // TODO: Return Narvar Order
+    //     return await JsonSerializer.DeserializeAsync<NarvarResponse>(responseBody);
+    // }
 }
