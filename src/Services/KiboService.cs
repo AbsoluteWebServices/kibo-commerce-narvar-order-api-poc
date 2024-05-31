@@ -70,7 +70,8 @@ public class KiboService
         var responseBody = await response.Content.ReadAsStreamAsync();
         var kiboResponse = await JsonSerializer.DeserializeAsync<ShipmentData>(responseBody) ??
                            throw new KiboException(response);
-        return kiboResponse._embedded.shipments.ToList();
+        // embedded is potentially blank
+        return kiboResponse._embedded?.shipments ?? new List<KiboShipment>();
     }
 
     private async Task AuthenticateAsync()

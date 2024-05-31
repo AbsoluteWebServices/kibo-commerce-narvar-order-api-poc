@@ -82,7 +82,10 @@ public class WebhookService
 			else
 			{
 				// No new shipments
-				return Results.Json(null);
+				return Results.Json(new
+				{
+					message = "No new shipments to process."
+				});
 			}
         }
         catch (KiboException e)
