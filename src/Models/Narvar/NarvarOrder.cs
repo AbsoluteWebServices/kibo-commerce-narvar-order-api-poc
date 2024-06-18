@@ -23,6 +23,7 @@ namespace KiboWebhookListener.Models.Narvar
     public class ContactWithAddressAndId : ContactWithAddress
 	{
 	    public string customer_id { get; set; }
+	    public string type { get; set;  }
 	}
 
     public class Billing
