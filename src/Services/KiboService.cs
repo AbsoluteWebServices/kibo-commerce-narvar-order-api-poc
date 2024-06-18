@@ -172,7 +172,7 @@ public class KiboService
 			
 			// Sandbox will always be UPS
 			// New comment
-			carrier = shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t)).StartsWith("1Z") && !_sandbox ? "USPS" : "UPS",
+			carrier = shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t)).StartsWith("1Z") ? "UPS" : "USPS",
 			shipped_to = new ShippedTo()
 			{
 				first_name = shipment.customer.customerContact.firstName,
