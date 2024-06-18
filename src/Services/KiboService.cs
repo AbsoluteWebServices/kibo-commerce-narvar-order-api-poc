@@ -168,10 +168,6 @@ public class KiboService
 				quantity = item.quantity
 			}).ToList(),
 			ship_method = shipment.shippingMethodName,
-			// Find first tracking number that is not empty
-			
-			// Sandbox will always be UPS
-			// New comment
 			carrier = shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t)).StartsWith("1Z") ? "UPS" : "USPS",
 			shipped_to = new ShippedTo()
 			{
@@ -194,7 +190,13 @@ public class KiboService
 			// ship_total = shipment.total,
 			ship_tax = shipment.shippingTaxTotal,
 			ship_date = shipment.fulfillmentDate,
-			tracking_number = _sandbox ? response.orderNumber + "_" + index : shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t))
+			tracking_number = _sandbox 
+				? response.orderNumber + "_" + index 
+				: shipment.packages
+					.SelectMany(p => p.trackingNumbers)
+					.FirstOrDefault(t => !string.IsNullOrEmpty(t))
+					?.Split(',')
+					.FirstOrDefault(t => !string.IsNullOrEmpty(t))
 		}).ToList();
 		
 		var billingContact = response.billingInfo?.billingContact ?? new BillingContact
