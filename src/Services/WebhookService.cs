@@ -1,3 +1,4 @@
+using System.Text.Json;
 using KiboWebhookListener.Exceptions;
 using KiboWebhookListener.Models;
 using KiboWebhookListener.Models.Narvar;
@@ -6,16 +7,19 @@ namespace KiboWebhookListener.Services;
 
 public class WebhookService
 {
-	private readonly KiboService _kiboService = new();
+	private KiboService _kiboService;
 	private readonly NarvarService _narvarService = new();
 
 	public async Task<IResult> ProcessRequest(HttpRequest request)
 	{
+		_kiboService = new KiboService(request.Headers["X-Vol-Tenant"]);
+		var incomingTenant = request.Headers["X-Vol-Tenant"];
 		var jsonData = await _kiboService.DeserializeWebhookData(request.Body);
 		if (!IsValidJson(jsonData))
 		{
 			return Results.BadRequest("JSON deserialization resulted in null.");
 		}
+
 		try
 		{
 			switch (jsonData!.topic)
@@ -39,6 +43,11 @@ public class WebhookService
 		{
 			LogException(e);
 			return Results.Json(e.JsonParameter);
+		}
+		catch (Exception e)
+		{
+			LogException(e);
+			return Results.Json(e.Message);
 		}
 	}
 

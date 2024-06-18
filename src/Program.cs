@@ -6,6 +6,7 @@ EnvHelper.LoadEnv();
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
+
 var webhookService = new WebhookService();
 
 app.MapPost("/webhooks/kibo", webhookService.ProcessRequest);

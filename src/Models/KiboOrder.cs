@@ -12,6 +12,7 @@ public class KiboOrder
 	public string orderNumber { get; set; }
 	public string submittedDate { get; set; }
 	public string version { get; set; }
+	public string status { get; set; }
 
 	public bool isPartialOrder { get; set; }
 
@@ -26,5 +27,7 @@ public class KiboOrder
 	public string currencyCode { get; set; }
 
 	public Data data { get; set; }
+	
+	public AuditInfo auditInfo { get; set; }
 	// ... other properties
 }

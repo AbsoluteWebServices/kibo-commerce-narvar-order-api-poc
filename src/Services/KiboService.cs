@@ -10,17 +10,50 @@ namespace KiboWebhookListener.Services;
 public class KiboService
 {
 	private readonly HttpClient _client = new();
-	private readonly string _clientId = Environment.GetEnvironmentVariable("KIBO_CLIENT_ID")!;
-	private readonly string _clientSecret = Environment.GetEnvironmentVariable("KIBO_CLIENT_SECRET")!;
-	private readonly string _orderPrefix = "UAT_";
-	private readonly bool _sandbox = Environment.GetEnvironmentVariable("KIBO_ENVIRONMENT") != "production";
+	private string? _orderPrefix;
+	private string? _clientId;
+	private string? _clientSecret;
+	private bool _sandbox;
+	private static readonly TokenManager _tokenManager = new TokenManager();
 
-	private readonly string _sandboxPrefix =
-		Environment.GetEnvironmentVariable("KIBO_ENVIRONMENT")!.Equals("production") ? "" : ".sandbox";
 
-	private readonly string _tenantId = Environment.GetEnvironmentVariable("KIBO_TENANT_ID")!;
-
-    // TODO: pull from environment variables
+	// private readonly string _tenantId = Environment.GetEnvironmentVariable("KIBO_TENANT_ID")!;
+	private string? _baseUrl;
+	
+	
+	// Constructor to process tenantConfig
+	public KiboService(string tenantIdRaw)
+	{
+		var tenantId = "t" + tenantIdRaw;
+		// TENANT_t15653_CLIENT_ID=cb_narvar_order_api_uat.2.0.0.Release
+		// TENANT_t15653_CLIENT_SECRET=a2171a18567840b79777cb8b09a93559
+		// TENANT_t15653_ENVIRONMENT=production
+		// TENANT_t15653_ORDER_PREFIX=PROD_
+		var rawConfig = $@"{{
+			""{tenantId}"": {{
+				""clientId"": ""{Environment.GetEnvironmentVariable($"TENANT_{tenantId}_CLIENT_ID")}"",
+				""clientSecret"": ""{Environment.GetEnvironmentVariable($"TENANT_{tenantId}_CLIENT_SECRET")}"",
+				""environment"": ""{Environment.GetEnvironmentVariable($"TENANT_{tenantId}_ENVIRONMENT")}"",
+				""orderPrefix"": ""{Environment.GetEnvironmentVariable($"TENANT_{tenantId}_ORDER_PREFIX")}""
+			}}
+		}}";
+		var tenantConfigs = JsonSerializer.Deserialize<Dictionary<String, TenantConfig>>(rawConfig);
+		if (tenantConfigs != null && tenantConfigs.TryGetValue(tenantId, out TenantConfig? config))
+		{
+			_clientId = config.clientId;
+			_clientSecret = config.clientSecret;
+			_sandbox = config.environment != "production";
+			_orderPrefix = config.orderPrefix;
+			
+			var sandboxPrefix = GetSandboxPrefix(config.environment);
+			_baseUrl = $"https://{tenantId}{sandboxPrefix}.mozu.com";
+		}
+	}
+	private string? GetSandboxPrefix(string environment)
+	{
+		return environment.Equals("production") ? string.Empty : ".sandbox";
+	}
+	
     public async Task<KiboWebhookData?> DeserializeWebhookData(Stream json)
     {
         return await JsonSerializer.DeserializeAsync<KiboWebhookData>(json);
@@ -30,7 +63,7 @@ public class KiboService
 	{
 		await AuthenticateAsync();
 
-		var url = $"https://{_tenantId}{_sandboxPrefix}.mozu.com/api/commerce/orders/{orderId}";
+		var url = $"{_baseUrl}/api/commerce/orders/{orderId}";
 		// try to get the order 3 times with a exponential delay
 		var attempts = 0;
 		while (attempts < 3)
@@ -45,6 +78,10 @@ public class KiboService
 				KiboOrder order = await JsonSerializer.DeserializeAsync<KiboOrder>(responseBody) ??
 				                         throw new KiboException(response);
 				order.orderNumber = _orderPrefix + order.orderNumber;
+				if (order.status is "Pending")
+				{
+					throw new Exception("Order is still pending");
+				}
 				return order;
 			}
 			catch (HttpRequestException e)
@@ -63,7 +100,7 @@ public class KiboService
     {
         await AuthenticateAsync();
         
-        var url = $"https://{_tenantId}{_sandboxPrefix}.mozu.com/api/commerce/shipments?filter=orderId=={orderId};shipmentStatus!=REASSIGNED;shipmentStatus!=CANCELED;shipmentType!=Transfer;fulfillmentStatus==Fulfilled";
+        var url = $"{_baseUrl}/api/commerce/shipments?filter=orderId=={orderId};shipmentStatus!=REASSIGNED;shipmentStatus!=CANCELED;shipmentType!=Transfer;fulfillmentStatus==Fulfilled";
         var response = await _client.GetAsync(url);
 
         if (!response.IsSuccessStatusCode) throw new HttpRequestException("Error: " + response.StatusCode);
@@ -77,7 +114,15 @@ public class KiboService
 
     private async Task AuthenticateAsync()
     {
-        var tokenEndpoint = $"https://{_tenantId}{_sandboxPrefix}.mozu.com/api/platform/applications/authtickets/oauth";
+	    
+	    // Check if the token is still valid
+	    if (_tokenManager.Token != null && _tokenManager.Expiration > DateTime.UtcNow)
+	    {
+		    _client.DefaultRequestHeaders.Authorization =
+			    new AuthenticationHeaderValue("Bearer", _tokenManager.Token);
+		    return;
+	    }
+        var tokenEndpoint = $"{_baseUrl}/api/platform/applications/authtickets/oauth";
 
         var requestBody = new
         {
@@ -103,8 +148,12 @@ public class KiboService
 		{
 			throw new Exception("Could not authenticate with Kibo");
 		}
-        _client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", token);
+		var expiresIn = Convert.ToInt32(responseObject?["expires_in"].ToString());
+		_tokenManager.Token = token;
+		_tokenManager.Expiration = DateTime.UtcNow.AddSeconds(expiresIn - 60); // Subtract 60 seconds to ensure renewal before expiration
+
+		_client.DefaultRequestHeaders.Authorization =
+			new AuthenticationHeaderValue("Bearer", _tokenManager.Token);
     }
 
     public NarvarRequest TransformOrderResponse(KiboOrder response, List<KiboShipment>? kiboShipments)
@@ -148,11 +197,33 @@ public class KiboService
 			tracking_number = _sandbox ? response.orderNumber + "_" + index : shipment.packages.SelectMany(p => p.trackingNumbers).First(t => !string.IsNullOrEmpty(t))
 		}).ToList();
 		
+		var billingContact = response.billingInfo?.billingContact ?? new BillingContact
+		{
+			firstName = response.fulfillmentInfo.fulfillmentContact.firstName,
+			lastNameOrSurname = response.fulfillmentInfo.fulfillmentContact.lastNameOrSurname,
+			phoneNumbers = new Models.PhoneNumbers()
+			{
+				mobile = response.fulfillmentInfo.fulfillmentContact.phoneNumbers.mobile
+			},
+			email = response.fulfillmentInfo.fulfillmentContact.email,
+			address = new Models.Address
+			{
+				address1 = response.fulfillmentInfo.fulfillmentContact.address.address1,
+				address2 = response.fulfillmentInfo.fulfillmentContact.address.address2,
+				cityOrTown = response.fulfillmentInfo.fulfillmentContact.address.cityOrTown,
+				stateOrProvince = response.fulfillmentInfo.fulfillmentContact.address.stateOrProvince,
+				postalOrZipCode = response.fulfillmentInfo.fulfillmentContact.address.postalOrZipCode,
+				countryCode = response.fulfillmentInfo.fulfillmentContact.address.countryCode
+			}
+		};
+
+		
 		NarvarRequest transformed = new NarvarRequest()
 		{
 			order_info = new OrderInfo()
 			{
 				order_number = response.orderNumber,
+				// If no submitted date, it isn't ready
 				order_date = response.submittedDate,
 				currency_code = response.currencyCode,
 				attributes = new OrderAttributes()
@@ -179,18 +250,18 @@ public class KiboService
 				{
 					billed_to = new ContactWithAddress()
 					{
-						first_name = response.billingInfo.billingContact.firstName,
-						last_name = response.billingInfo.billingContact.lastNameOrSurname,
-						phone = response.billingInfo.billingContact.phoneNumbers.mobile,
-						email = response.billingInfo.billingContact.email,
+						first_name = billingContact.firstName,
+						last_name = billingContact.lastNameOrSurname,
+						phone = billingContact.phoneNumbers.mobile,
+						email = billingContact.email,
 						address = new Models.Narvar.Address()
 						{
-							street_1 = response.billingInfo.billingContact.address.address1,
-							street_2 = response.billingInfo.billingContact.address.address2,
-							city = response.billingInfo.billingContact.address.cityOrTown,
-							state = response.billingInfo.billingContact.address.stateOrProvince,
-							zip = response.billingInfo.billingContact.address.postalOrZipCode,
-							country = response.billingInfo.billingContact.address.countryCode
+							street_1 = billingContact.address.address1,
+							street_2 = billingContact.address.address2,
+							city = billingContact.address.cityOrTown,
+							state = billingContact.address.stateOrProvince,
+							zip = billingContact.address.postalOrZipCode,
+							country = billingContact.address.countryCode
 						}
 					}
 				},
@@ -217,4 +288,10 @@ public class KiboService
 
 		return transformed;
 	}
+}
+
+public class TokenManager
+{
+	public string Token { get; set; }
+	public DateTime Expiration { get; set; }
 }
