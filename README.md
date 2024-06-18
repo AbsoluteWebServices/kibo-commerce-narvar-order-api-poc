@@ -34,5 +34,4 @@ Click Install from the upper right and select a Tenant to install the app to.
 ## Callouts
 
 - Does not handle returns
-- Does not handle fulfillments
 - Does not validate Kibo as the source of the webhook
