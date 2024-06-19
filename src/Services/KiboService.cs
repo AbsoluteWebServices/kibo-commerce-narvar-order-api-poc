@@ -274,7 +274,7 @@ public class KiboService
 					last_name = response.billingInfo.billingContact.lastNameOrSurname,
 					phone = response.billingInfo.billingContact.phoneNumbers.mobile,
 					email = response.billingInfo.billingContact.email,
-					type = response.data.pointsToBeEarned > 0 ? "points" : "regular",
+					customer_type = response.data.pointsToBeEarned > 0 ? "points" : "regular",
 					address = new Models.Narvar.Address()
 					{
 						street_1 = response.billingInfo.billingContact.address.address1,
